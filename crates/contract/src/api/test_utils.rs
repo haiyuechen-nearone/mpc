@@ -276,6 +276,9 @@ impl MpcContract {
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
+            pending_llm_inference_requests: LookupMap::new(
+                StorageKey::PendingLlmInferenceRequestsV1,
+            ),
             accept_requests: true,
             proposed_updates: Default::default(),
             node_foreign_chain_support: Default::default(),

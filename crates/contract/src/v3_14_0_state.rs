@@ -262,6 +262,9 @@ impl From<MpcContract> for crate::MpcContract {
             pending_verify_foreign_tx_requests: LookupMap::new(
                 crate::storage_keys::StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
+            pending_llm_inference_requests: LookupMap::new(
+                crate::storage_keys::StorageKey::PendingLlmInferenceRequestsV1,
+            ),
             proposed_updates: old.proposed_updates,
             node_foreign_chain_support: old.node_foreign_chain_support,
             config: old.config.into(),

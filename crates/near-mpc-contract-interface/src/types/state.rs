@@ -89,6 +89,8 @@ pub enum DomainPurpose {
     Sign,
     /// Domain is used by `verify_foreign_transaction()`.
     ForeignTx,
+    /// Domain is used by `request_llm_inference()`.
+    Llm,
     /// Domain is used by `request_app_private_key()` (Confidential Key Derivation).
     CKD,
 }

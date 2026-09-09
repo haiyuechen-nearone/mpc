@@ -62,6 +62,9 @@ impl MpcContract {
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
+            pending_llm_inference_requests: LookupMap::new(
+                StorageKey::PendingLlmInferenceRequestsV1,
+            ),
             proposed_updates: ProposedUpdates::default(),
             config,
             tee_state,
@@ -150,6 +153,9 @@ impl MpcContract {
             pending_ckd_requests: LookupMap::new(StorageKey::PendingCKDRequestsV3),
             pending_verify_foreign_tx_requests: LookupMap::new(
                 StorageKey::PendingVerifyForeignTxRequestsV3,
+            ),
+            pending_llm_inference_requests: LookupMap::new(
+                StorageKey::PendingLlmInferenceRequestsV1,
             ),
             proposed_updates: Default::default(),
             tee_state,

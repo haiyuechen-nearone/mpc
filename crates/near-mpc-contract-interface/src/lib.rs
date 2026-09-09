@@ -18,6 +18,9 @@ pub mod types {
     pub use participants::{ParticipantId, ParticipantInfo, Participants};
 
     pub use ckd::{CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequestArgs, CkdAppId};
+    pub use llm::{
+        LlmInferenceRequest, LlmInferenceRequestArgs, LlmInferenceResponse, LlmSignPayload,
+    };
     pub use near_mpc_crypto_types::CKDResponse;
     pub use near_mpc_crypto_types::ckd::CKDRequest;
 
@@ -60,6 +63,7 @@ pub mod types {
     mod ckd;
     mod config;
     mod foreign_chain;
+    mod llm;
     mod node_migrations;
     mod participants;
     mod primitives;

@@ -1084,6 +1084,17 @@ pub fn args_into_verify_foreign_tx_request(
     }
 }
 
+pub fn args_into_llm_inference_request(
+    args: dtos::LlmInferenceRequestArgs,
+) -> dtos::LlmInferenceRequest {
+    dtos::LlmInferenceRequest {
+        domain_id: args.domain_id,
+        model_id: args.model_id,
+        prompt: args.prompt,
+        schema: args.schema,
+    }
+}
+
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {

@@ -39,7 +39,7 @@ use crate::{
 };
 use config::Config;
 use near_mpc_contract_interface::types::{
-    CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
+    CKDRequest, LlmInferenceRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
 };
 
 use near_sdk::{
@@ -57,6 +57,7 @@ pub struct MpcContract {
     pending_signature_requests: LookupMap<SignatureRequest, Vec<YieldIndex>>,
     pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
+    pending_llm_inference_requests: LookupMap<LlmInferenceRequest, Vec<YieldIndex>>,
     proposed_updates: ProposedUpdates,
     // TODO(#3475): drop this once we upgrade the contract and nodes start using
     // the new API.
