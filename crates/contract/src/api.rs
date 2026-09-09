@@ -9,6 +9,7 @@ pub mod governance;
 pub mod key_events;
 pub mod keys;
 pub mod lifecycle;
+pub mod llm;
 pub mod node_migration;
 pub mod sign;
 pub mod tee_measurements;

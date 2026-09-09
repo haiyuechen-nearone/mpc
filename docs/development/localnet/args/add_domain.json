@@ -27,6 +27,13 @@
       "protocol": "CaitSith",
       "reconstruction_threshold": 2,
       "purpose": "ForeignTx"
+    },
+    {
+      "id": 4,
+      "curve": "Secp256k1",
+      "protocol": "CaitSith",
+      "reconstruction_threshold": 2,
+      "purpose": "Llm"
     }
   ]
 }

@@ -7,11 +7,13 @@
 pub const SIGN: &str = "sign";
 pub const REQUEST_APP_PRIVATE_KEY: &str = "request_app_private_key";
 pub const VERIFY_FOREIGN_TRANSACTION: &str = "verify_foreign_transaction";
+pub const REQUEST_LLM_INFERENCE: &str = "request_llm_inference";
 
 // Node response methods
 pub const RESPOND: &str = "respond";
 pub const RESPOND_CKD: &str = "respond_ckd";
 pub const RESPOND_VERIFY_FOREIGN_TX: &str = "respond_verify_foreign_tx";
+pub const RESPOND_LLM_INFERENCE: &str = "respond_llm_inference";
 
 // Vote methods
 pub const VOTE_PK: &str = "vote_pk";
@@ -67,6 +69,8 @@ pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =
 pub const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS: &str = "return_ck_and_clean_state_on_success";
 pub const RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_verify_foreign_tx_and_clean_state_on_success";
+pub const RETURN_LLM_INFERENCE_AND_CLEAN_STATE_ON_SUCCESS: &str =
+    "return_llm_inference_and_clean_state_on_success";
 pub const RESOLVE_VERIFICATION: &str = "resolve_verification";
 pub const FAIL_ATTESTATION_SUBMISSION: &str = "fail_attestation_submission";
 
@@ -84,6 +88,7 @@ pub const PROPOSED_UPDATES: &str = "proposed_updates";
 pub const GET_PENDING_REQUEST: &str = "get_pending_request";
 pub const GET_PENDING_CKD_REQUEST: &str = "get_pending_ckd_request";
 pub const GET_PENDING_VERIFY_FOREIGN_TX_REQUEST: &str = "get_pending_verify_foreign_tx_request";
+pub const GET_PENDING_LLM_INFERENCE_REQUEST: &str = "get_pending_llm_inference_request";
 pub const GET_TEE_ACCOUNTS: &str = "get_tee_accounts";
 pub const AVAILABLE_ATTESTATION_GRANTS: &str = "available_attestation_grants";
 pub const TEE_VERIFIER_ACCOUNT_ID: &str = "tee_verifier_account_id";

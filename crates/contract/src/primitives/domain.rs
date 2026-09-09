@@ -20,6 +20,7 @@ pub fn is_valid_protocol_for_purpose(purpose: DomainPurpose, protocol: Protocol)
             | (DomainPurpose::Sign, Protocol::DamgardEtAl)
             | (DomainPurpose::Sign, Protocol::Frost)
             | (DomainPurpose::ForeignTx, Protocol::CaitSith)
+            | (DomainPurpose::Llm, Protocol::CaitSith)
             | (DomainPurpose::CKD, Protocol::ConfidentialKeyDerivation)
     )
 }

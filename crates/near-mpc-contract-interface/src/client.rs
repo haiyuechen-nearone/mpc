@@ -8,10 +8,10 @@ use near_contract_transport::{CallContract, FunctionCallArgs, NearGas, NearToken
 
 use crate::call_args::{
     InitArgs, RegisterBackupServiceArgs, RegisterForeignChainSupportArgs,
-    RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs, StartNodeMigrationArgs,
-    SubmitParticipantInfoArgs, UpdateParticipantUrlArgs, VerifyForeignTransactionArgs,
-    VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteNewParametersArgs, VoteTeeVerifierChangeArgs,
-    VoteUpdateArgs, VoteUpdateForeignChainProvidersArgs,
+    RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, RequestLlmInferenceArgs, SignArgs,
+    StartNodeMigrationArgs, SubmitParticipantInfoArgs, UpdateParticipantUrlArgs,
+    VerifyForeignTransactionArgs, VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteNewParametersArgs,
+    VoteTeeVerifierChangeArgs, VoteUpdateArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -19,17 +19,17 @@ use crate::deposits::{
 };
 use crate::method_names::{
     CANCEL_NODE_MIGRATION, INIT, PROPOSE_UPDATE, REGISTER_BACKUP_SERVICE,
-    REGISTER_FOREIGN_CHAIN_SUPPORT, REGISTER_FOREIGN_CHAINS_CONFIG, REQUEST_APP_PRIVATE_KEY, SIGN,
-    START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO, UPDATE_PARTICIPANT_URL,
-    VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN,
-    VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE,
-    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    REGISTER_FOREIGN_CHAIN_SUPPORT, REGISTER_FOREIGN_CHAINS_CONFIG, REQUEST_APP_PRIVATE_KEY,
+    REQUEST_LLM_INFERENCE, SIGN, START_NODE_MIGRATION, SUBMIT_PARTICIPANT_INFO,
+    UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VOTE_ADD_DOMAINS,
+    VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_NEW_PARAMETERS, VOTE_TEE_VERIFIER_CHANGE,
+    VOTE_UPDATE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDAppPublicKey, CKDRequestArgs, ChainEntry,
     DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain,
-    ForeignChainsConfig, GovernanceThresholdParameters, InitConfig, PayloadBytesError,
-    ProposeUpdateArgs, ProposedGovernanceThresholdParameters, SignRequestArgs,
+    ForeignChainsConfig, GovernanceThresholdParameters, InitConfig, LlmInferenceRequestArgs,
+    PayloadBytesError, ProposeUpdateArgs, ProposedGovernanceThresholdParameters, SignRequestArgs,
     SupportedForeignChains, TeeVerifierCodeHash, UpdateId, VerifyForeignTransactionRequestArgs,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -131,6 +131,20 @@ impl<C: CallContract> MpcContractHandle<C> {
         let args = serde_json::to_vec(&VerifyForeignTransactionArgs::new(request))?;
         self.call(FunctionCallArgs::new(
             VERIFY_FOREIGN_TRANSACTION,
+            args,
+            SIGN_GAS,
+            NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
+        ))
+        .await
+    }
+
+    pub async fn request_llm_inference(
+        &self,
+        request: LlmInferenceRequestArgs,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&RequestLlmInferenceArgs::new(request))?;
+        self.call(FunctionCallArgs::new(
+            REQUEST_LLM_INFERENCE,
             args,
             SIGN_GAS,
             NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
@@ -545,6 +559,15 @@ mod tests {
             .await
             .unwrap();
         handle
+            .request_llm_inference(crate::types::LlmInferenceRequestArgs {
+                domain_id: DomainId(0),
+                model_id: "test-model".to_string(),
+                prompt: "test prompt".to_string(),
+                schema: "{}".to_string(),
+            })
+            .await
+            .unwrap();
+        handle
             .propose_update(ProposeUpdateArgs {
                 code: Some(vec![7u8; 4]),
                 config: None,
@@ -633,7 +656,7 @@ mod tests {
 
         // Then
         let calls = caller.calls.lock().unwrap();
-        assert_eq!(calls.len(), 21);
+        assert_eq!(calls.len(), 22);
         let catalog = calls
             .iter()
             .map(|(contract_id, call)| render(contract_id, call))

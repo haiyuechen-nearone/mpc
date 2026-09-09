@@ -395,6 +395,35 @@ expression: abi
         }
       },
       {
+        "name": "get_pending_llm_inference_request",
+        "doc": " Presence check for a pending LLM inference request, exposed as a view\n call. Only the `Some`/`None` distinction is meaningful; see\n [`Self::get_pending_verify_foreign_tx_request`].",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/LlmInferenceRequest"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/YieldIndex"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      {
         "name": "get_pending_request",
         "doc": " Presence check for a pending signature request, exposed as a view call.\n\n **The returned [`dtos::YieldIndex`] is an arbitrary representative, not \"the\" yield\n for this request.** Since the duplicate-request fan-out feature (PR #3187),\n a single request key can have N queued yields; this method returns the head of the\n queue. Callers that need to act on the full set are wrong to use this. The\n only correct interpretation is presence: `Some(_)` vs `None`.\n\n The `Option<dtos::YieldIndex>` shape is retained for JSON wire compatibility with\n out-of-tree consumers; the in-tree caller (`tx_sender::observe_tx_result`)\n only matches on presence. Prefer a `bool`-shaped accessor if one is added.",
         "kind": "view",
@@ -1041,6 +1070,25 @@ expression: abi
               "name": "request",
               "type_schema": {
                 "$ref": "#/definitions/CKDRequestArgs"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "request_llm_inference",
+        "doc": " Submit an LLM inference request. MPC nodes run the prompt through the\n pinned model independently and sign only on byte-identical output.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/LlmInferenceRequestArgs"
               }
             }
           ]
@@ -1755,6 +1803,33 @@ expression: abi
         }
       },
       {
+        "name": "respond_llm_inference",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/LlmInferenceRequest"
+              }
+            },
+            {
+              "name": "response",
+              "type_schema": {
+                "$ref": "#/definitions/LlmInferenceResponse"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "respond_verify_foreign_tx",
         "kind": "call",
         "params": {
@@ -1811,6 +1886,39 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "$ref": "#/definitions/PromiseOrValueCKDResponse"
+          }
+        }
+      },
+      {
+        "name": "return_llm_inference_and_clean_state_on_success",
+        "doc": " Yield-resume callback for a single queued LLM inference request.\n\n On success, returns the signed response to the original caller. On\n timeout, pops this yield's slot from the pending-request map and fires\n `fail_on_timeout`.",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/LlmInferenceRequest"
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "json",
+            "type_schema": {
+              "$ref": "#/definitions/LlmInferenceResponse"
+            }
+          }
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PromiseOrValueLlmInferenceResponse"
           }
         }
       },
@@ -3298,6 +3406,13 @@ expression: abi
               ]
             },
             {
+              "description": "Domain is used by `request_llm_inference()`.",
+              "type": "string",
+              "enum": [
+                "Llm"
+              ]
+            },
+            {
               "description": "Domain is used by `request_app_private_key()` (Confidential Key Derivation).",
               "type": "string",
               "enum": [
@@ -4247,6 +4362,69 @@ expression: abi
             }
           ]
         },
+        "LlmInferenceRequest": {
+          "type": "object",
+          "required": [
+            "domain_id",
+            "model_id",
+            "prompt",
+            "schema"
+          ],
+          "properties": {
+            "domain_id": {
+              "$ref": "#/definitions/DomainId"
+            },
+            "model_id": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            },
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "LlmInferenceRequestArgs": {
+          "type": "object",
+          "required": [
+            "domain_id",
+            "model_id",
+            "prompt",
+            "schema"
+          ],
+          "properties": {
+            "domain_id": {
+              "$ref": "#/definitions/DomainId"
+            },
+            "model_id": {
+              "description": "The model the caller expects, recorded in the signed payload for auditability.",
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            },
+            "schema": {
+              "description": "JSON Schema the output must satisfy. Stored and hashed opaquely; validation is node-side.",
+              "type": "string"
+            }
+          }
+        },
+        "LlmInferenceResponse": {
+          "type": "object",
+          "required": [
+            "payload_hash",
+            "signature"
+          ],
+          "properties": {
+            "payload_hash": {
+              "$ref": "#/definitions/Hash256"
+            },
+            "signature": {
+              "$ref": "#/definitions/SignatureResponse"
+            }
+          }
+        },
         "MeasurementVoteAction": {
           "description": "The action a participant is voting for on an OS measurement set.",
           "oneOf": [
@@ -4516,6 +4694,21 @@ expression: abi
             },
             "big_y": {
               "$ref": "#/definitions/Bls12381G1PublicKey"
+            }
+          }
+        },
+        "PromiseOrValueLlmInferenceResponse": {
+          "type": "object",
+          "required": [
+            "payload_hash",
+            "signature"
+          ],
+          "properties": {
+            "payload_hash": {
+              "$ref": "#/definitions/Hash256"
+            },
+            "signature": {
+              "$ref": "#/definitions/SignatureResponse"
             }
           }
         },

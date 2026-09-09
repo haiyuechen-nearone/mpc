@@ -3,11 +3,11 @@
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
     DestinationNodeInfo, DomainConfig, Ed25519PublicKey, EpochId, ForeignChain,
-    GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset,
-    ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
-    SignatureResponse, SupportedForeignChains, TeeVerifierCodeHash, UpdateId,
-    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse,
+    GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, LlmInferenceRequest,
+    LlmInferenceRequestArgs, LlmInferenceResponse, ProposedGovernanceThresholdParameters,
+    PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse, SupportedForeignChains,
+    TeeVerifierCodeHash, UpdateId, VerifyForeignTransactionRequest,
+    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,11 @@ pub struct RequestAppPrivateKeyArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VerifyForeignTransactionArgs {
     pub request: VerifyForeignTransactionRequestArgs,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct RequestLlmInferenceArgs {
+    pub request: LlmInferenceRequestArgs,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
@@ -93,6 +98,12 @@ pub struct VerifyForeignTransactionRespondArgs {
     pub response: VerifyForeignTransactionResponse,
 }
 
+#[derive(Serialize, Debug, Deserialize, Clone, derive_more::Constructor)]
+pub struct LlmInferenceRespondArgs {
+    pub request: LlmInferenceRequest,
+    pub response: LlmInferenceResponse,
+}
+
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct GetPendingSignatureRequestArgs {
     pub request: SignatureRequest,
@@ -106,6 +117,11 @@ pub struct GetPendingCKDRequestArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct GetPendingVerifyForeignTxRequestArgs {
     pub request: VerifyForeignTransactionRequest,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct GetPendingLlmInferenceRequestArgs {
+    pub request: LlmInferenceRequest,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
