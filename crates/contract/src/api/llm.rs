@@ -419,6 +419,7 @@ mod tests {
         contract.request_llm_inference(transfer_request_args());
 
         // Then
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(
             contract.return_llm_inference_and_clean_state_on_success(
                 request.clone(),

@@ -2,6 +2,26 @@
 
 This file provides guidance to code agents when working in this repository.
 
+## Hackathon fork, relaxed standards
+
+This fork exists only for the MPC verified LLM intents hackathon demo
+(design: `../llm-mpc-demo-plan.md`). The engineering standards referenced
+below still describe the upstream culture, but on this fork they are
+guidelines, not gates:
+
+- Code must work and stay readable; do not let structure slide into
+  spaghetti.
+- Do not block on the full `docs/engineering-standards.md` checklist, the
+  `cargo make check-all-fast` battery, or comment-minimalism rules when they
+  would slow the demo down.
+- Always required: `cargo check` / `cargo clippy -p <crate>` clean on
+  whatever you touched, plus tests that exercise the change. Contract wasm
+  builds still go through `nix develop -c` (native build fails).
+- Cluster/e2e style tests are known flaky on macOS; a failing full-suite run
+  is not a blocker if the touched tests pass solo and the same failures
+  reproduce on clean main.
+- No PR ceremony is required on this fork unless Haiyue asks for it.
+
 ## Build and Test Commands
 
 ### Quick Reference

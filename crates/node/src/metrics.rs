@@ -197,6 +197,24 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED: LazyLock<prometheus::Int
         .unwrap()
     });
 
+pub static MPC_NUM_LLM_INFERENCE_REQUESTS_INDEXED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_num_llm_inference_requests_indexed",
+            "Number of llm inference requests seen by the indexer"
+        )
+        .unwrap()
+    });
+
+pub static MPC_NUM_LLM_INFERENCE_RESPONSES_INDEXED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_num_llm_inference_responses_indexed",
+            "Number of llm inference responses seen by the indexer"
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_TIMEOUTS_INDEXED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "mpc_num_fail_on_timeout_indexed",
@@ -232,6 +250,16 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED: LazyLock<prometheus::IntC
         prometheus::register_int_counter_vec!(
             "mpc_num_verify_foreign_tx_computations_led",
             "Number of finished verify foreign tx computation attempts that this node led. Attempts interrupted before completion (e.g. node restart) are not counted.",
+            &["result"],
+        )
+        .unwrap()
+    });
+
+pub static MPC_NUM_LLM_INFERENCE_COMPUTATIONS_LED: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_num_llm_inference_computations_led",
+            "Number of finished llm inference computation attempts that this node led. Attempts interrupted before completion (e.g. node restart) are not counted.",
             &["result"],
         )
         .unwrap()
@@ -397,6 +425,15 @@ pub static VERIFY_FOREIGN_TX_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCou
         prometheus::register_int_counter!(
             "verify_foreign_tx_request_channel_failed",
             "failed to send on channel in verify_foreign_tx_request_channel",
+        )
+        .unwrap()
+    });
+
+pub static LLM_INFERENCE_REQUEST_CHANNEL_FAILED: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "llm_inference_request_channel_failed",
+            "failed to send on channel in llm_inference_request_channel",
         )
         .unwrap()
     });

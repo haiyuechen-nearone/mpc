@@ -64,6 +64,30 @@ impl Default for KeygenConfig {
     }
 }
 
+/// Config for the node's LLM inference endpoint. Every node in the cluster
+/// must resolve the same model: the network only signs on byte-identical
+/// output, so a divergent model or prompt shows up as a timeout, not a wrong
+/// signature.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LlmConfig {
+    /// OpenAI-compatible chat completions endpoint base URL,
+    /// e.g. `http://127.0.0.1:8080/v1` for `mlx_lm.server`.
+    pub url: String,
+    /// Model identifier sent to the endpoint and recorded in the signed payload.
+    pub model: String,
+    pub timeout_sec: u64,
+}
+
+impl Default for LlmConfig {
+    fn default() -> LlmConfig {
+        LlmConfig {
+            url: "http://127.0.0.1:8080/v1".to_string(),
+            model: "Qwen2.5-1.5B-Instruct-4bit".to_string(),
+            timeout_sec: 30,
+        }
+    }
+}
+
 /// Config for the web UI, which is mostly for debugging and metrics.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WebUIConfig {
@@ -146,6 +170,8 @@ pub struct ConfigFile {
     pub keygen: KeygenConfig,
     #[serde(default)]
     pub foreign_chains: ForeignChainsConfig,
+    #[serde(default)]
+    pub llm: LlmConfig,
     /// This value is only considered when the node is run in normal node. It defines the number of
     /// working threads for the runtime.
     pub cores: Option<usize>,

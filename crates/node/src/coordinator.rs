@@ -27,12 +27,15 @@ use crate::primitives::{MpcTaskId, ParticipantId};
 use crate::providers::ckd::CKDProvider;
 use crate::providers::ecdsa::triple;
 use crate::providers::eddsa::{EddsaSignatureProvider, EddsaTaskId};
+use crate::providers::llm_inference::LlmInferenceProvider;
 use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{DomainKeyshare, EcdsaSignatureProvider, EcdsaTaskId};
 use crate::runtime::{AsyncDroppableRuntime, build_lower_priority_runtime};
 use crate::storage::SignRequestStorage;
-use crate::storage::{CKDRequestStorage, VerifyForeignTransactionRequestStorage};
+use crate::storage::{
+    CKDRequestStorage, LlmInferenceRequestStorage, VerifyForeignTransactionRequestStorage,
+};
 use crate::tracking::{self};
 use crate::web::DebugRequest;
 use futures::FutureExt;
@@ -585,6 +588,8 @@ where
                 let verify_foreign_tx_request_store = Arc::new(
                     VerifyForeignTransactionRequestStorage::new(secret_db.clone())?,
                 );
+                let llm_inference_request_store =
+                    Arc::new(LlmInferenceRequestStorage::new(secret_db.clone())?);
 
                 let mut ecdsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
@@ -735,17 +740,25 @@ where
                     ecdsa_signature_provider.clone(),
                 )?);
 
+                let llm_inference_provider = Arc::new(LlmInferenceProvider::new(
+                    config_file.clone().into(),
+                    ecdsa_signature_provider.clone(),
+                    llm_inference_request_store.clone(),
+                )?);
+
                 let mpc_client = Arc::new(MpcClient::new(
                     config_file.into(),
                     network_client,
                     sign_request_store,
                     ckd_request_store,
                     verify_foreign_tx_request_store,
+                    llm_inference_request_store,
                     ecdsa_signature_provider,
                     robust_ecdsa_signature_provider,
                     eddsa_signature_provider,
                     ckd_provider,
                     verify_foreign_tx_provider,
+                    llm_inference_provider,
                     domain_to_protocol,
                     gen_runtime_handle,
                 ));

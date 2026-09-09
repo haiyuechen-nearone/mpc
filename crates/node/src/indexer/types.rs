@@ -1,5 +1,5 @@
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
-use crate::types::{SignatureRequest, VerifyForeignTxRequest};
+use crate::types::{LlmInferenceRequest, SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
 use k256::{
     AffinePoint, Scalar, Secp256k1,
@@ -10,8 +10,9 @@ use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, REGISTER_FOREIGN_CHAINS_CONFIG, RESPOND, RESPOND_CKD,
-    RESPOND_VERIFY_FOREIGN_TX, START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE,
-    SUBMIT_PARTICIPANT_INFO, VERIFY_TEE, VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_PK, VOTE_RESHARED,
+    RESPOND_LLM_INFERENCE, RESPOND_VERIFY_FOREIGN_TX, START_KEYGEN_INSTANCE,
+    START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE, VOTE_ABORT_KEY_EVENT_INSTANCE,
+    VOTE_PK, VOTE_RESHARED,
 };
 use near_mpc_contract_interface::types::{self as dtos};
 use serde::Serialize;
@@ -45,6 +46,7 @@ pub trait ChainRespondArgs {}
 impl ChainRespondArgs for contract_args::SignatureRespondArgs {}
 impl ChainRespondArgs for contract_args::CKDRespondArgs {}
 impl ChainRespondArgs for contract_args::VerifyForeignTransactionRespondArgs {}
+impl ChainRespondArgs for contract_args::LlmInferenceRespondArgs {}
 
 /// Request to send a transaction to the contract on chain.
 #[derive(Serialize, Debug)]
@@ -77,6 +79,7 @@ pub enum ChainSendTransactionRequest {
 
     ConcludeNodeMigration(contract_args::ConcludeNodeMigrationArgs),
     VerifyForeignTransactionRespond(contract_args::VerifyForeignTransactionRespondArgs),
+    LlmInferenceRespond(contract_args::LlmInferenceRespondArgs),
 }
 
 impl ChainSendTransactionRequest {
@@ -105,6 +108,7 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::VerifyForeignTransactionRespond(_) => {
                 RESPOND_VERIFY_FOREIGN_TX
             }
+            ChainSendTransactionRequest::LlmInferenceRespond(_) => RESPOND_LLM_INFERENCE,
         }
     }
 
@@ -123,7 +127,8 @@ impl ChainSendTransactionRequest {
             | Self::VerifyTee()
             | Self::SubmitParticipantInfo { .. }
             | Self::ConcludeNodeMigration(_)
-            | Self::VerifyForeignTransactionRespond(_) => MAX_GAS,
+            | Self::VerifyForeignTransactionRespond(_)
+            | Self::LlmInferenceRespond(_) => MAX_GAS,
         }
     }
 }
@@ -243,6 +248,46 @@ impl VerifyForeignTransactionRespondArgsExt for contract_args::VerifyForeignTran
                 expected_payload_hash: request.expected_payload_hash,
             },
             dtos::VerifyForeignTransactionResponse {
+                payload_hash,
+                signature: dtos::SignatureResponse::Secp256k1(dto_signature),
+            },
+        ))
+    }
+}
+
+pub trait LlmInferenceRespondArgsExt {
+    fn from_signature(
+        request: LlmInferenceRequest,
+        payload: dtos::LlmSignPayload,
+        signature: Signature,
+        public_key: VerifyingKey,
+    ) -> anyhow::Result<Self>
+    where
+        Self: Sized;
+}
+
+impl LlmInferenceRespondArgsExt for contract_args::LlmInferenceRespondArgs {
+    fn from_signature(
+        request: LlmInferenceRequest,
+        payload: dtos::LlmSignPayload,
+        signature: Signature,
+        public_key: VerifyingKey,
+    ) -> anyhow::Result<Self> {
+        let payload_hash = payload.compute_msg_hash()?;
+        let recovery_id = brute_force_recovery_id(
+            &public_key.to_element().to_affine(),
+            &signature,
+            payload_hash.as_ref(),
+        )?;
+
+        let dto_signature = dtos::K256Signature {
+            big_r: dtos::K256AffinePoint::from(signature.big_r),
+            s: dtos::K256Scalar::from(signature.s),
+            recovery_id,
+        };
+        Ok(contract_args::LlmInferenceRespondArgs::new(
+            request.request,
+            dtos::LlmInferenceResponse {
                 payload_hash,
                 signature: dtos::SignatureResponse::Secp256k1(dto_signature),
             },

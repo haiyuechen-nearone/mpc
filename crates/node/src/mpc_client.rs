@@ -1,7 +1,8 @@
 use crate::indexer::handler::ChainBlockUpdate;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
-    ChainSendTransactionRequest, SignatureRespondArgsExt, VerifyForeignTransactionRespondArgsExt,
+    ChainSendTransactionRequest, LlmInferenceRespondArgsExt, SignatureRespondArgsExt,
+    VerifyForeignTransactionRespondArgsExt,
 };
 use crate::metrics;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
@@ -9,6 +10,7 @@ use crate::primitives::MpcTaskId;
 use crate::providers::ckd::CKDProvider;
 use crate::providers::ecdsa::EcdsaTaskId;
 use crate::providers::eddsa::EddsaSignatureProvider;
+use crate::providers::llm_inference::LlmInferenceProvider;
 use crate::providers::robust_ecdsa::{RobustEcdsaSignatureProvider, RobustEcdsaTaskId};
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
@@ -16,12 +18,13 @@ use crate::requests::queue::{
     CHECK_EACH_REQUEST_INTERVAL, PendingRequests, REQUEST_EXPIRATION_BLOCKS,
 };
 use crate::storage::{
-    CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
+    CKDRequestStorage, LlmInferenceRequestStorage, SignRequestStorage,
+    VerifyForeignTransactionRequestStorage,
 };
 use crate::tracking::{self, AutoAbortTaskCollection};
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::SignatureRequest;
-use crate::types::{CKDRequest, RequestsUpdate, VerifyForeignTxRequest};
+use crate::types::{CKDRequest, LlmInferenceRequest, RequestsUpdate, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
 use chain_gateway::event_subscriber::recent_blocks_tracker::{AddBlockResult, RecentBlocksTracker};
 use mpc_node_config::ConfigFile;
@@ -54,11 +57,13 @@ pub struct MpcClient {
     sign_request_store: Arc<SignRequestStorage>,
     ckd_request_store: Arc<CKDRequestStorage>,
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
+    llm_inference_request_store: Arc<LlmInferenceRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
     eddsa_signature_provider: Arc<EddsaSignatureProvider>,
     ckd_provider: Arc<CKDProvider>,
     verify_foreign_tx_provider: Arc<VerifyForeignTxProvider>,
+    llm_inference_provider: Arc<LlmInferenceProvider>,
     domain_to_protocol: HashMap<DomainId, Protocol>,
     /// Lower-priority runtime for CPU-heavy asset generation.
     gen_runtime_handle: tokio::runtime::Handle,
@@ -84,7 +89,8 @@ fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
         },
         MpcTaskId::EddsaTaskId(_)
         | MpcTaskId::CKDTaskId(_)
-        | MpcTaskId::VerifyForeignTxTaskId(_) => false,
+        | MpcTaskId::VerifyForeignTxTaskId(_)
+        | MpcTaskId::LlmInferenceTaskId(_) => false,
     }
 }
 
@@ -116,11 +122,13 @@ impl MpcClient {
         sign_request_store: Arc<SignRequestStorage>,
         ckd_request_store: Arc<CKDRequestStorage>,
         verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
+        llm_inference_request_store: Arc<LlmInferenceRequestStorage>,
         ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
         robust_ecdsa_signature_provider: Arc<RobustEcdsaSignatureProvider>,
         eddsa_signature_provider: Arc<EddsaSignatureProvider>,
         ckd_provider: Arc<CKDProvider>,
         verify_foreign_tx_provider: Arc<VerifyForeignTxProvider>,
+        llm_inference_provider: Arc<LlmInferenceProvider>,
         domain_to_protocol: HashMap<DomainId, Protocol>,
         gen_runtime_handle: tokio::runtime::Handle,
     ) -> Self {
@@ -130,11 +138,13 @@ impl MpcClient {
             sign_request_store,
             ckd_request_store,
             verify_foreign_tx_request_store,
+            llm_inference_request_store,
             ecdsa_signature_provider,
             robust_ecdsa_signature_provider,
             eddsa_signature_provider,
             ckd_provider,
             verify_foreign_tx_provider,
+            llm_inference_provider,
             domain_to_protocol,
             gen_runtime_handle,
         }
@@ -280,6 +290,14 @@ impl MpcClient {
                 .new_eligible_leaders_refiner(),
         );
 
+        let mut pending_llm_inferences =
+            PendingRequests::<LlmInferenceRequest, contract_args::LlmInferenceRespondArgs>::new(
+                Clock::real(),
+                self.client.all_participant_ids(),
+                self.client.my_participant_id(),
+                self.client.clone(),
+            );
+
         let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);
         let start_time = Clock::real().now();
         loop {
@@ -326,7 +344,7 @@ impl MpcClient {
 
                     let verify_foreign_tx_requests : RequestsUpdate<VerifyForeignTxRequest> = RequestsUpdate::from_chain(
                         &block_update.block,
-                        block_status,
+                        block_status.clone(),
                         block_update.verify_foreign_tx_requests,
                         block_update.completed_verify_foreign_txs
                     );
@@ -335,6 +353,19 @@ impl MpcClient {
                         self.verify_foreign_tx_request_store.add(request);
                     }
                     pending_verify_foreign_txs.notify_new_block(verify_foreign_tx_requests);
+
+                    let llm_inference_requests: RequestsUpdate<LlmInferenceRequest> =
+                        RequestsUpdate::from_chain(
+                            &block_update.block,
+                            block_status,
+                            block_update.llm_inference_requests,
+                            block_update.completed_llm_inference_requests,
+                        );
+
+                    for request in &llm_inference_requests.requests {
+                        self.llm_inference_request_store.add(request);
+                    }
+                    pending_llm_inferences.notify_new_block(llm_inference_requests);
                 }
                 debug_request = debug_receiver.recv() => {
                     if let Ok(debug_request) = debug_request {
@@ -353,6 +384,10 @@ impl MpcClient {
                             }
                             DebugRequestKind::RecentVerifyForeignTxs => {
                                 let debug_output = format!("{:?}", pending_verify_foreign_txs);
+                                debug_request.respond(debug_output);
+                            }
+                            DebugRequestKind::RecentLlmInferences => {
+                                let debug_output = format!("{:?}", pending_llm_inferences);
                                 debug_request.respond(debug_output);
                             }
                         }
@@ -517,6 +552,59 @@ impl MpcClient {
                     },
                 );
             }
+
+            let llm_inference_attempts = pending_llm_inferences.get_requests_to_attempt();
+
+            for llm_inference_attempt in llm_inference_attempts {
+                let this = self.clone();
+                let chain_txn_sender_llm_inference = chain_txn_sender.clone();
+                tasks.spawn_checked(
+                    &format!(
+                        "leader for llm_inference request {:?}",
+                        llm_inference_attempt.request.id
+                    ),
+                    async move {
+                        // Only issue an MPC llm_inference computation if we haven't computed it
+                        // in a previous attempt.
+                        let existing_response = llm_inference_attempt
+                            .computation_progress
+                            .lock()
+                            .unwrap()
+                            .computed_response
+                            .clone();
+                        let response = match existing_response {
+                            None => {
+                                let response = run_led_computation(
+                                    &metrics::MPC_NUM_LLM_INFERENCE_COMPUTATIONS_LED,
+                                    Duration::from_secs(this.config.signature.timeout_sec),
+                                    this.compute_llm_inference_response(
+                                        &llm_inference_attempt.request,
+                                    ),
+                                )
+                                .await?;
+
+                                llm_inference_attempt
+                                    .computation_progress
+                                    .lock()
+                                    .unwrap()
+                                    .computed_response = Some(response.clone());
+                                response
+                            }
+                            Some(response) => response,
+                        };
+                        let _ = chain_txn_sender_llm_inference
+                            .send(ChainSendTransactionRequest::LlmInferenceRespond(response))
+                            .await;
+                        llm_inference_attempt
+                            .computation_progress
+                            .lock()
+                            .unwrap()
+                            .last_response_submission = Some(Clock::real().now());
+
+                        anyhow::Ok(())
+                    },
+                );
+            }
         }
     }
 
@@ -637,6 +725,39 @@ impl MpcClient {
         }
     }
 
+    async fn compute_llm_inference_response(
+        &self,
+        request: &LlmInferenceRequest,
+    ) -> anyhow::Result<contract_args::LlmInferenceRespondArgs> {
+        match self.domain_to_protocol.get(&request.request.domain_id) {
+            Some(Protocol::CaitSith) => {
+                let (payload, signature, public_key) = self
+                    .llm_inference_provider
+                    .make_llm_inference_leader(request.id)
+                    .await?;
+
+                let response = contract_args::LlmInferenceRespondArgs::from_signature(
+                    request.clone(),
+                    payload,
+                    signature,
+                    public_key,
+                )?;
+
+                Ok(response)
+            }
+            Some(Protocol::ConfidentialKeyDerivation)
+            | Some(Protocol::DamgardEtAl)
+            | Some(Protocol::Frost) => Err(anyhow::anyhow!(
+                "Signature scheme is not allowed for domain: {:?}",
+                request.request.domain_id
+            )),
+            None => Err(anyhow::anyhow!(
+                "Signature scheme is not found for domain: {:?}",
+                request.request.domain_id
+            )),
+        }
+    }
+
     async fn monitor_passive_channels_inner(
         mut channel_receiver: mpsc::UnboundedReceiver<NetworkTaskChannel>,
         mpc_client: Arc<MpcClient>,
@@ -691,6 +812,12 @@ impl MpcClient {
                     .process_channel(channel)
                     .await?
             }
+            MpcTaskId::LlmInferenceTaskId(_) => {
+                self.llm_inference_provider
+                    .clone()
+                    .process_channel(channel)
+                    .await?
+            }
         }
 
         Ok(())
@@ -720,7 +847,7 @@ mod tests {
     fn is_heavy_generation_task__should_classify_generation_vs_other_tasks() {
         // Given every task kind paired with whether it is CPU-heavy asset
         // generation that must run on the lower-priority gen runtime.
-        let cases: [(MpcTaskId, bool); 12] = [
+        let cases: [(MpcTaskId, bool); 13] = [
             // ECDSA: triples and presignatures are heavy generation.
             (
                 EcdsaTaskId::ManyTriples {
@@ -810,6 +937,14 @@ mod tests {
             ),
             (
                 VerifyForeignTxTaskId::VerifyForeignTx {
+                    id: CryptoHash::default(),
+                    presignature_id: uid(),
+                }
+                .into(),
+                false,
+            ),
+            (
+                crate::providers::llm_inference::LlmInferenceTaskId::LlmInference {
                     id: CryptoHash::default(),
                     presignature_id: uid(),
                 }

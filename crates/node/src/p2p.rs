@@ -1018,6 +1018,7 @@ pub mod testing {
             TestPorts::mpc_node_tests(27);
         pub const MIGRATION_WEBSERVER_EMPTY_KEYSET_TEST: TestPorts = TestPorts::mpc_node_tests(28);
         pub const VERIFY_FOREIGN_TX_GATING_TEST: TestPorts = TestPorts::mpc_node_tests(29);
+        pub const LLM_INFERENCE_TEST: TestPorts = TestPorts::mpc_node_tests(30);
     }
 
     pub fn generate_test_p2p_configs(

@@ -278,6 +278,25 @@ async fn observe_tx_result(
 
             Ok(transaction_status)
         }
+        LlmInferenceRespond(respond_args) => {
+            // Confirm whether the respond call succeeded by checking whether the
+            // pending llm inference request still exists in the contract state.
+            // A successful respond removes the request from contract state.
+            let pending_request_response = indexer_state
+                .view_client
+                .get_pending_llm_inference_request(
+                    &indexer_state.mpc_contract_id,
+                    &respond_args.request,
+                )
+                .await?;
+
+            let transaction_status = match pending_request_response {
+                Some(_) => TransactionStatus::NotExecuted,
+                None => TransactionStatus::Executed,
+            };
+
+            Ok(transaction_status)
+        }
         SubmitParticipantInfo {
             args,
             pre_submit_expiry,
