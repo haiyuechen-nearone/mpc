@@ -18,7 +18,7 @@ presignature:
   desired_presignatures_to_buffer: 64
   timeout_sec: 60
 signature:
-  timeout_sec: 60
+  timeout_sec: 120
 indexer:
   validate_genesis: false
   sync_mode: Latest
