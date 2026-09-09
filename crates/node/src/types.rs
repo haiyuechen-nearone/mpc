@@ -17,7 +17,8 @@ use near_mpc_contract_interface::types as dtos;
 use chain_gateway::event_subscriber::recent_blocks_tracker::BlockStatusHandle;
 
 use crate::indexer::handler::{
-    CKDRequestFromChain, SignatureRequestFromChain, VerifyForeignTxRequestFromChain,
+    CKDRequestFromChain, LlmInferenceRequestFromChain, SignatureRequestFromChain,
+    VerifyForeignTxRequestFromChain,
 };
 
 pub(crate) struct RequestsUpdate<T> {
@@ -55,6 +56,7 @@ pub enum RequestType {
     Signature,
     CKD,
     VerifyForeignTx,
+    LlmInference,
 }
 
 pub type RequestId = CryptoHash;
@@ -149,6 +151,7 @@ impl fmt::Display for RequestType {
             RequestType::Signature => write!(f, "signature"),
             RequestType::CKD => write!(f, "ckd"),
             RequestType::VerifyForeignTx => write!(f, "verify_foreign_tx"),
+            RequestType::LlmInference => write!(f, "llm_inference"),
         }
     }
 }
@@ -264,6 +267,68 @@ impl Request for VerifyForeignTxRequest {
 
     fn get_type() -> RequestType {
         RequestType::VerifyForeignTx
+    }
+}
+
+pub type LlmInferenceId = CryptoHash;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LlmInferenceRequest {
+    /// The unique ID that identifies the llm inference request, and can also
+    /// uniquely identify the response.
+    pub id: LlmInferenceId,
+    /// The receipt that generated the llm inference request, which can be used to look up on chain.
+    pub receipt_id: CryptoHash,
+    pub request: dtos::LlmInferenceRequest,
+    pub entropy: [u8; 32],
+    pub timestamp_nanosec: u64,
+}
+
+impl FromChain<LlmInferenceRequestFromChain> for LlmInferenceRequest {
+    fn from_chain(chain_value: LlmInferenceRequestFromChain, block: &BlockContext) -> Self {
+        let LlmInferenceRequestFromChain {
+            llm_inference_id,
+            receipt_id,
+            request,
+        } = chain_value;
+        LlmInferenceRequest {
+            id: llm_inference_id,
+            receipt_id,
+            request: dtos::LlmInferenceRequest {
+                domain_id: request.domain_id,
+                model_id: request.model_id,
+                prompt: request.prompt,
+                schema: request.schema,
+            },
+            entropy: block.entropy.clone().into(),
+            timestamp_nanosec: block.timestamp_nanosec,
+        }
+    }
+}
+
+impl Request for LlmInferenceRequest {
+    fn get_id(&self) -> RequestId {
+        self.id
+    }
+
+    fn get_receipt_id(&self) -> CryptoHash {
+        self.receipt_id
+    }
+
+    fn get_entropy(&self) -> [u8; 32] {
+        self.entropy
+    }
+
+    fn get_timestamp_nanosec(&self) -> u64 {
+        self.timestamp_nanosec
+    }
+
+    fn get_domain_id(&self) -> DomainId {
+        self.request.domain_id
+    }
+
+    fn get_type() -> RequestType {
+        RequestType::LlmInference
     }
 }
 

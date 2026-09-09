@@ -1,6 +1,7 @@
 use crate::indexer::stats::IndexerStats;
 use crate::metrics;
 use crate::types::CKDId;
+use crate::types::LlmInferenceId;
 use crate::types::SignatureId;
 use crate::types::VerifyForeignTxId;
 use anyhow::Context;
@@ -14,12 +15,14 @@ use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
 };
 use near_mpc_contract_interface::method_names::{
-    FAIL_ON_TIMEOUT, REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
+    FAIL_ON_TIMEOUT, REQUEST_APP_PRIVATE_KEY, REQUEST_LLM_INFERENCE,
+    RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS, RETURN_LLM_INFERENCE_AND_CLEAN_STATE_ON_SUCCESS,
     RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
     RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS, SIGN, VERIFY_FOREIGN_TRANSACTION,
 };
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::CKDRequestArgs;
+use near_mpc_contract_interface::types::LlmInferenceRequestArgs;
 use near_mpc_contract_interface::types::Payload;
 use near_mpc_contract_interface::types::VerifyForeignTransactionRequestArgs;
 use near_mpc_crypto_types::ckd::CKDRequest;
@@ -41,6 +44,11 @@ struct UnvalidatedCKDArgs {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct UnvalidatedVerifyForeignTxArgs {
     request: VerifyForeignTransactionRequestArgs,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct UnvalidatedLlmInferenceArgs {
+    request: LlmInferenceRequestArgs,
 }
 
 /// A validated version of the signature request
@@ -80,6 +88,13 @@ pub struct VerifyForeignTxRequestFromChain {
     pub request: VerifyForeignTransactionRequestArgs,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct LlmInferenceRequestFromChain {
+    pub llm_inference_id: LlmInferenceId,
+    pub receipt_id: CryptoHash,
+    pub request: LlmInferenceRequestArgs,
+}
+
 #[derive(Clone)]
 pub struct ChainBlockUpdate {
     pub block: BlockContext,
@@ -89,6 +104,8 @@ pub struct ChainBlockUpdate {
     pub completed_ckds: Vec<CKDId>,
     pub verify_foreign_tx_requests: Vec<VerifyForeignTxRequestFromChain>,
     pub completed_verify_foreign_txs: Vec<VerifyForeignTxId>,
+    pub llm_inference_requests: Vec<LlmInferenceRequestFromChain>,
+    pub completed_llm_inference_requests: Vec<LlmInferenceId>,
 }
 
 #[cfg(feature = "network-hardship-simulation")]
@@ -163,6 +180,8 @@ async fn handle_message(
     let mut completed_ckds = vec![];
     let mut verify_foreign_tx_requests = vec![];
     let mut completed_verify_foreign_txs = vec![];
+    let mut llm_inference_requests = vec![];
+    let mut completed_llm_inference_requests = vec![];
 
     for shard in streamer_message.shards {
         for outcome in shard.receipt_execution_outcomes {
@@ -217,6 +236,18 @@ async fn handle_message(
                             metrics::MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED.inc();
                         }
                     }
+                    REQUEST_LLM_INFERENCE => {
+                        if let Some((llm_inference_id, llm_inference_args)) =
+                            try_get_llm_inference_args(&receipt, next_receipt_id, args, method_name)
+                        {
+                            llm_inference_requests.push(LlmInferenceRequestFromChain {
+                                llm_inference_id,
+                                receipt_id: receipt.receipt_id,
+                                request: llm_inference_args,
+                            });
+                            metrics::MPC_NUM_LLM_INFERENCE_REQUESTS_INDEXED.inc();
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -236,6 +267,10 @@ async fn handle_message(
                     RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS => {
                         completed_verify_foreign_txs.push(request_id);
                         metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();
+                    }
+                    RETURN_LLM_INFERENCE_AND_CLEAN_STATE_ON_SUCCESS => {
+                        completed_llm_inference_requests.push(request_id);
+                        metrics::MPC_NUM_LLM_INFERENCE_RESPONSES_INDEXED.inc();
                     }
                     FAIL_ON_TIMEOUT => {
                         metrics::MPC_NUM_TIMEOUTS_INDEXED.inc();
@@ -268,6 +303,8 @@ async fn handle_message(
             completed_ckds,
             verify_foreign_tx_requests,
             completed_verify_foreign_txs,
+            llm_inference_requests,
+            completed_llm_inference_requests,
         })
         .inspect_err(|err| {
             tracing::error!(target: "mpc", %err, "error sending block update to mpc node");
@@ -424,6 +461,31 @@ fn try_get_verify_foreign_tx_args(
             expected_payload_hash: verify_foreign_tx_args.request.expected_payload_hash,
         },
     ))
+}
+
+fn try_get_llm_inference_args(
+    receipt: &ReceiptView,
+    next_receipt_id: CryptoHash,
+    args: &FunctionArgs,
+    expected_name: &str,
+) -> Option<(LlmInferenceId, LlmInferenceRequestArgs)> {
+    let llm_inference_args = match serde_json::from_slice::<'_, UnvalidatedLlmInferenceArgs>(args) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            tracing::warn!(target: "mpc", %err, "failed to parse `{}` arguments", expected_name);
+            return None;
+        }
+    };
+
+    tracing::info!(
+        target: "mpc",
+        receipt_id = %receipt.receipt_id,
+        next_receipt_id = %next_receipt_id,
+        caller_id = receipt.predecessor_id.to_string(),
+        request = ?llm_inference_args.request,
+        "indexed new `{}` function call", expected_name
+    );
+    Some((next_receipt_id, llm_inference_args.request))
 }
 
 fn try_get_request_completion(receipt: &ReceiptView, mpc_contract_id: &AccountId) -> Option<CKDId> {

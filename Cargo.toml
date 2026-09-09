@@ -172,6 +172,7 @@ itertools = "0.15.0"
 # `links = "jemalloc"` collision.
 jemalloc_pprof = "0.4.2"
 jsonrpsee = { version = "0.26.0", features = ["http-client"] }
+jsonschema = "0.55.1"
 k256 = "0.13.4"
 keccak = "0.1.5"
 libc = "0.2"

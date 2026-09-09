@@ -216,6 +216,7 @@ pub enum DebugRequestKind {
     RecentSignatures,
     RecentCKDs,
     RecentVerifyForeignTxs,
+    RecentLlmInferences,
 }
 
 async fn debug_request_from_node(
@@ -246,6 +247,10 @@ async fn debug_signatures(state: State<WebServerState>) -> Result<String, Anyhow
 
 async fn debug_ckds(state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
     debug_request_from_node(state, DebugRequestKind::RecentCKDs).await
+}
+
+async fn debug_llm_inferences(state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
+    debug_request_from_node(state, DebugRequestKind::RecentLlmInferences).await
 }
 
 async fn migrations(state: State<WebServerState>) -> Json<(u64, ContractMigrationInfo)> {
@@ -348,6 +353,10 @@ pub async fn start_web_server(
         .route("/debug/blocks", axum::routing::get(debug_blocks))
         .route("/debug/signatures", axum::routing::get(debug_signatures))
         .route("/debug/ckds", axum::routing::get(debug_ckds))
+        .route(
+            "/debug/llm_inferences",
+            axum::routing::get(debug_llm_inferences),
+        )
         .route("/debug/contract", axum::routing::get(contract_state))
         .route(
             "/debug/recent_transactions",
@@ -393,7 +402,7 @@ mod tests {
     use mpc_node_config::foreign_chains::{
         ForeignChainConfig, ForeignChainProviderConfig, RpcProviderName,
     };
-    use mpc_node_config::{AuthConfig, ForeignChainsConfig, SyncMode, TokenConfig};
+    use mpc_node_config::{AuthConfig, ForeignChainsConfig, LlmConfig, SyncMode, TokenConfig};
     use near_indexer_primitives::types::Finality;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use std::net::Ipv4Addr;
@@ -475,6 +484,7 @@ mod tests {
             signature: SignatureConfig { timeout_sec: 60 },
             ckd: CKDConfig { timeout_sec: 60 },
             keygen: KeygenConfig { timeout_sec: 60 },
+            llm: LlmConfig::default(),
             foreign_chains: ForeignChainsConfig {
                 solana: Some(test_chain(
                     PROVIDER_ALCHEMY,

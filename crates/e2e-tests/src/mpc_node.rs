@@ -6,9 +6,9 @@ use anyhow::Context;
 use ed25519_dalek::SigningKey;
 use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
 use mpc_node_config::{
-    BlockArgs, CKDConfig, ChainId, ConfigFile, IndexerConfig, KeygenConfig, LogConfig, LogFormat,
-    NearInitConfig, PresignatureConfig, SecretsStartConfig, SignatureConfig, StartConfig, SyncMode,
-    TripleConfig,
+    BlockArgs, CKDConfig, ChainId, ConfigFile, IndexerConfig, KeygenConfig, LlmConfig, LogConfig,
+    LogFormat, NearInitConfig, PresignatureConfig, SecretsStartConfig, SignatureConfig,
+    StartConfig, SyncMode, TripleConfig,
 };
 use near_indexer_primitives::types::Finality;
 use near_kit::AccountId;
@@ -486,6 +486,7 @@ impl MpcNodeSetup {
                 ckd: CKDConfig { timeout_sec: 60 },
                 keygen: KeygenConfig { timeout_sec: 60 },
                 foreign_chains: self.foreign_chains_config.clone(),
+                llm: LlmConfig::default(),
             },
             pccs_endpoints: mpc_node_config::default_pccs_endpoints(),
         };

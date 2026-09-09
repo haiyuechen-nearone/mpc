@@ -1,6 +1,9 @@
 use crate::db::{DBCol, SecretDB};
 use crate::metrics;
-use crate::types::{CKDId, CKDRequest, VerifyForeignTxId, VerifyForeignTxRequest};
+use crate::types::{
+    CKDId, CKDRequest, LlmInferenceId, LlmInferenceRequest, VerifyForeignTxId,
+    VerifyForeignTxRequest,
+};
 use crate::types::{SignatureId, SignatureRequest};
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -210,6 +213,76 @@ impl VerifyForeignTransactionRequestStorage {
     }
 }
 
+pub struct LlmInferenceRequestStorage {
+    db: Arc<SecretDB>,
+    add_sender: broadcast::Sender<LlmInferenceId>,
+}
+
+impl LlmInferenceRequestStorage {
+    pub fn new(db: Arc<SecretDB>) -> anyhow::Result<Self> {
+        let (tx, _) = tokio::sync::broadcast::channel(500);
+        Ok(Self { db, add_sender: tx })
+    }
+
+    /// If given request is already in the database, returns false.
+    /// Otherwise, inserts the request and returns true.
+    pub fn add(&self, request: &LlmInferenceRequest) -> bool {
+        let key = borsh::to_vec(&request.id).unwrap();
+        if self
+            .db
+            .get(DBCol::LlmInferenceRequest, &key)
+            .expect("Unrecoverable error reading from database")
+            .is_some()
+        {
+            return false;
+        }
+        let value_ser = serde_json::to_vec(&request).unwrap();
+        let mut update = self.db.update();
+        update.put(DBCol::LlmInferenceRequest, &key, &value_ser);
+        update
+            .commit()
+            .expect("Unrecoverable error writing to database");
+        let _ = self.add_sender.send(request.id);
+        true
+    }
+
+    /// Returns when an llm inference request with given id is present, then returns it.
+    /// This behavior is necessary because a peer might initiate computation for an llm
+    /// inference request before our indexer has caught up to the request. We need proof
+    /// of the request from on-chain in order to participate in the computation.
+    pub async fn get(&self, id: LlmInferenceId) -> Result<LlmInferenceRequest, anyhow::Error> {
+        let key = borsh::to_vec(&id)?;
+        let mut rx = self.add_sender.subscribe();
+        if let Some(request_ser) = self.db.get(DBCol::LlmInferenceRequest, &key)? {
+            return Ok(serde_json::from_slice(&request_ser)?);
+        }
+        loop {
+            let added_id = match rx.recv().await {
+                Ok(added_id) => added_id,
+                Err(e) => match e {
+                    broadcast::error::RecvError::Closed => {
+                        metrics::LLM_INFERENCE_REQUEST_CHANNEL_FAILED.inc();
+                        return Err(anyhow::anyhow!(
+                            "Error in llm_inference_request channel recv, {e}"
+                        ));
+                    }
+                    broadcast::error::RecvError::Lagged(msg_n) => {
+                        tracing::info!(
+                            "{msg_n} messages lagged during llm_inference_request channel recv"
+                        );
+                        continue;
+                    }
+                },
+            };
+            if added_id == id {
+                break;
+            }
+        }
+        let request_ser = self.db.get(DBCol::LlmInferenceRequest, &key)?.unwrap();
+        Ok(serde_json::from_slice(&request_ser)?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use mpc_primitives::domain::DomainId;
@@ -219,9 +292,38 @@ mod tests {
     use crate::types::CKDRequest;
     use crate::{
         db::SecretDB,
-        storage::{CKDRequestStorage, SignRequestStorage},
-        types::SignatureRequest,
+        storage::{CKDRequestStorage, LlmInferenceRequestStorage, SignRequestStorage},
+        types::{LlmInferenceRequest, SignatureRequest},
     };
+
+    #[tokio::test]
+    async fn test_llm_inference_request_storage() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let storage = LlmInferenceRequestStorage::new(db).unwrap();
+
+        let request = |id| LlmInferenceRequest {
+            id,
+            receipt_id: CryptoHash([0; 32]),
+            request: near_mpc_contract_interface::types::LlmInferenceRequest {
+                domain_id: DomainId::legacy_ecdsa_id(),
+                model_id: "test-model".to_string(),
+                prompt: "send 1 NEAR to alice.near".to_string(),
+                schema: "{}".to_string(),
+            },
+            entropy: [0; 32],
+            timestamp_nanosec: 0,
+        };
+
+        let req1 = request(CryptoHash(rand::random()));
+        assert!(storage.add(&req1));
+        assert!(!storage.add(&req1));
+        let stored = storage
+            .get(req1.id)
+            .await
+            .expect("Stored llm inference request should be retrievable");
+        assert_eq!(stored.request, req1.request);
+    }
 
     #[tokio::test]
     async fn test_sig_request_storage() {

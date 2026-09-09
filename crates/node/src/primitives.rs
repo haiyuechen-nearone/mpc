@@ -1,5 +1,6 @@
 use crate::providers::EcdsaTaskId;
 use crate::providers::eddsa::EddsaTaskId;
+use crate::providers::llm_inference::LlmInferenceTaskId;
 use crate::providers::robust_ecdsa::RobustEcdsaTaskId;
 use crate::providers::{ckd::CKDTaskId, verify_foreign_tx::VerifyForeignTxTaskId};
 use anyhow::Context;
@@ -264,6 +265,7 @@ pub enum MpcTaskId {
     CKDTaskId(CKDTaskId),
     RobustEcdsaTaskId(RobustEcdsaTaskId),
     VerifyForeignTxTaskId(VerifyForeignTxTaskId),
+    LlmInferenceTaskId(LlmInferenceTaskId),
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]

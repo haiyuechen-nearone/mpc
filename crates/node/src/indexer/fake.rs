@@ -6,12 +6,14 @@ use super::migrations::ContractMigrationInfo;
 use super::participants::ContractState;
 use super::types::ChainSendTransactionRequest;
 use crate::config::{self, ParticipantsConfig};
-use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
+use crate::indexer::handler::{
+    CKDRequestFromChain, LlmInferenceRequestFromChain, VerifyForeignTxRequestFromChain,
+};
 use crate::migration_service::types::MigrationInfo;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::SignatureId;
-use crate::types::{CKDId, VerifyForeignTxId};
+use crate::types::{CKDId, LlmInferenceId, VerifyForeignTxId};
 use anyhow::Context;
 use assert_matches::assert_matches;
 use chain_gateway::event_subscriber::recent_blocks_tracker::test_utils::TestBlockMaker;
@@ -49,6 +51,7 @@ pub struct FakeMpcContractState {
     pub pending_signatures: BTreeMap<Payload, SignatureId>,
     pub pending_ckds: BTreeMap<dtos::CkdAppId, CKDId>,
     pub pending_verify_foreign_txs: BTreeMap<dtos::ForeignChainRpcRequest, VerifyForeignTxId>,
+    pub pending_llm_inferences: BTreeMap<dtos::LlmInferenceRequest, LlmInferenceId>,
     // Legacy foreign-chain model, fed by the legacy registration; the node's
     // read path still depends on it. TODO(#3630): drop with the legacy API.
     supported_foreign_chains: dtos::SupportedForeignChains,
@@ -85,6 +88,7 @@ impl FakeMpcContractState {
             pending_signatures: BTreeMap::new(),
             pending_ckds: BTreeMap::new(),
             pending_verify_foreign_txs: BTreeMap::new(),
+            pending_llm_inferences: BTreeMap::new(),
             supported_foreign_chains: dtos::SupportedForeignChains::default(),
             supported_foreign_chains_by_node: dtos::ForeignChainSupportByNode::default(),
             available_foreign_chains: dtos::AvailableForeignChains::default(),
@@ -545,6 +549,8 @@ struct FakeIndexerCore {
     ckd_request_receiver: mpsc::UnboundedReceiver<CKDRequestFromChain>,
     /// Receives verify foreign tx requests from the FakeIndexerManager.
     verify_foreign_tx_request_receiver: mpsc::UnboundedReceiver<VerifyForeignTxRequestFromChain>,
+    /// Receives llm inference requests from the FakeIndexerManager.
+    llm_inference_request_receiver: mpsc::UnboundedReceiver<LlmInferenceRequestFromChain>,
     /// Broadcasts the contract state to each node.
     state_change_sender: broadcast::Sender<ContractState>,
     /// Broadcasts block updates to each node.
@@ -569,6 +575,11 @@ struct FakeIndexerCore {
     /// code.
     verify_foreign_tx_response_sender:
         mpsc::UnboundedSender<contract_args::VerifyForeignTransactionRespondArgs>,
+
+    /// When the core receives llm inference response txns, it processes them by sending them
+    /// through this sender. The receiver end of this is in FakeIndexManager to be received by
+    /// the test code.
+    llm_inference_response_sender: mpsc::UnboundedSender<contract_args::LlmInferenceRespondArgs>,
 
     /// How long to wait before generating the next block.
     block_time: std::time::Duration,
@@ -723,6 +734,36 @@ impl FakeIndexerCore {
                 );
             }
 
+            let mut llm_inference_requests = Vec::new();
+            loop {
+                match self.llm_inference_request_receiver.try_recv() {
+                    Ok(request) => {
+                        llm_inference_requests.push(request);
+                    }
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        return;
+                    }
+                    Err(mpsc::error::TryRecvError::Empty) => {
+                        break;
+                    }
+                }
+            }
+
+            for llm_inference_request in &llm_inference_requests {
+                let mut contract = contract.lock().await;
+                let llm_inference_id = llm_inference_request.llm_inference_id;
+                let request = &llm_inference_request.request;
+                contract.pending_llm_inferences.insert(
+                    dtos::LlmInferenceRequest {
+                        domain_id: request.domain_id,
+                        model_id: request.model_id.clone(),
+                        prompt: request.prompt.clone(),
+                        schema: request.schema.clone(),
+                    },
+                    llm_inference_id,
+                );
+            }
+
             let mut block_update = ChainBlockUpdate {
                 block: block.to_block_view(),
                 signature_requests,
@@ -731,6 +772,8 @@ impl FakeIndexerCore {
                 completed_ckds: Vec::new(),
                 verify_foreign_tx_requests,
                 completed_verify_foreign_txs: Vec::new(),
+                llm_inference_requests,
+                completed_llm_inference_requests: Vec::new(),
             };
             contract.lock().await.env.set_block_height(block.height());
             for (txn, uid) in transactions_to_process {
@@ -794,6 +837,24 @@ impl FakeIndexerCore {
                         } else {
                             tracing::warn!(
                                 "Ignoring respond_verify_foreign_tx transaction for unknown (possibly already-responded-to) verify foreign tx: {:?}",
+                                respond.request
+                            );
+                        }
+                    }
+                    ChainSendTransactionRequest::LlmInferenceRespond(respond) => {
+                        let mut contract = contract.lock().await;
+                        let llm_inference_id =
+                            contract.pending_llm_inferences.remove(&respond.request);
+                        if let Some(llm_inference_id) = llm_inference_id {
+                            self.llm_inference_response_sender
+                                .send(respond.clone())
+                                .unwrap();
+                            block_update
+                                .completed_llm_inference_requests
+                                .push(llm_inference_id);
+                        } else {
+                            tracing::warn!(
+                                "Ignoring respond_llm_inference transaction for unknown (possibly already-responded-to) llm inference: {:?}",
                                 respond.request
                             );
                         }
@@ -878,6 +939,13 @@ pub struct FakeIndexerManager {
         mpsc::UnboundedReceiver<contract_args::VerifyForeignTransactionRespondArgs>,
     /// Used to send verify foreign tx requests to the core.
     verify_foreign_tx_request_sender: mpsc::UnboundedSender<VerifyForeignTxRequestFromChain>,
+
+    /// Collects llm inference responses from the core. When the core processes llm inference
+    /// response transactions, it sends them to this receiver. See [`next_response_llm_inference()`].
+    llm_inference_response_receiver:
+        mpsc::UnboundedReceiver<contract_args::LlmInferenceRespondArgs>,
+    /// Used to send llm inference requests to the core.
+    llm_inference_request_sender: mpsc::UnboundedSender<LlmInferenceRequestFromChain>,
 
     /// Allows nodes to be disabled during tests. See [`disable()`].
     node_disabler: HashMap<TestNodeUid, NodeDisabler>,
@@ -1077,6 +1145,10 @@ impl FakeIndexerManager {
             mpsc::unbounded_channel();
         let (verify_foreign_tx_response_sender, verify_foreign_tx_response_receiver) =
             mpsc::unbounded_channel();
+        let (llm_inference_request_sender, llm_inference_request_receiver) =
+            mpsc::unbounded_channel();
+        let (llm_inference_response_sender, llm_inference_response_receiver) =
+            mpsc::unbounded_channel();
         let contract_state = FakeMpcContractState::new();
         let (foreign_chain_supporters_sender, foreign_chain_supporters_receiver) =
             watch::channel(supporters_by_available_chain(
@@ -1102,6 +1174,8 @@ impl FakeIndexerManager {
             account_id_by_uid: account_id_by_uid.clone(),
             verify_foreign_tx_response_sender,
             verify_foreign_tx_request_receiver,
+            llm_inference_response_sender,
+            llm_inference_request_receiver,
         };
         let core_task = AutoAbortTask::from(tokio::spawn(async move { core.run().await }));
         Self {
@@ -1121,6 +1195,8 @@ impl FakeIndexerManager {
             account_id_by_uid,
             verify_foreign_tx_response_receiver,
             verify_foreign_tx_request_sender,
+            llm_inference_response_receiver,
+            llm_inference_request_sender,
         }
     }
 
@@ -1144,6 +1220,11 @@ impl FakeIndexerManager {
             .unwrap()
     }
 
+    /// Waits for the next llm inference response submitted by any node.
+    pub async fn next_response_llm_inference(&mut self) -> contract_args::LlmInferenceRespondArgs {
+        self.llm_inference_response_receiver.recv().await.unwrap()
+    }
+
     /// The supporters channel every node's `IndexerAPI` receives.
     pub fn subscribe_foreign_chain_supporters(&self) -> watch::Receiver<ForeignChainSupporters> {
         self.foreign_chain_supporters_receiver.clone()
@@ -1162,6 +1243,11 @@ impl FakeIndexerManager {
     /// Sends a verify foreign tx request to the fake blockchain.
     pub fn request_verify_foreign_tx(&self, request: VerifyForeignTxRequestFromChain) {
         self.verify_foreign_tx_request_sender.send(request).unwrap();
+    }
+
+    /// Sends an llm inference request to the fake blockchain.
+    pub fn request_llm_inference(&self, request: LlmInferenceRequestFromChain) {
+        self.llm_inference_request_sender.send(request).unwrap();
     }
 
     /// Adds a new node to the fake indexer. Returns the API for the node, a task that

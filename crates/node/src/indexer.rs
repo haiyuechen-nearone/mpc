@@ -19,8 +19,8 @@ use near_indexer_primitives::{
 use near_mpc_contract_interface::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
     GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
-    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
-    MIGRATION_INFO, STATE,
+    GET_PENDING_CKD_REQUEST, GET_PENDING_LLM_INFERENCE_REQUEST, GET_PENDING_REQUEST,
+    GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, MIGRATION_INFO, STATE,
 };
 use near_mpc_contract_interface::types::{self as dtos, YieldIndex};
 use participants::ContractState;
@@ -208,6 +208,47 @@ impl IndexerViewClient {
             QueryResponseKind::CallResult(call_result) => {
                 serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
                     .context("failed to deserialize pending verify foreign tx request response")
+            }
+            _ => {
+                anyhow::bail!("Unexpected result from a view client function call");
+            }
+        }
+    }
+
+    pub(crate) async fn get_pending_llm_inference_request(
+        &self,
+        mpc_contract_id: &AccountId,
+        chain_llm_inference_request: &dtos::LlmInferenceRequest,
+    ) -> anyhow::Result<Option<YieldIndex>> {
+        let get_pending_request_args: Vec<u8> =
+            serde_json::to_string(&contract_args::GetPendingLlmInferenceRequestArgs::new(
+                chain_llm_inference_request.clone(),
+            ))
+            .unwrap()
+            .into_bytes();
+
+        let request = QueryRequest::CallFunction {
+            account_id: mpc_contract_id.clone(),
+            method_name: GET_PENDING_LLM_INFERENCE_REQUEST.to_string(),
+            args: get_pending_request_args.into(),
+        };
+        let block_reference = BlockReference::Finality(Finality::Final);
+
+        let query = near_client::Query {
+            block_reference,
+            request,
+        };
+
+        let query_response = self
+            .view_client
+            .send_async(query)
+            .await
+            .context("failed to query for pending llm inference request")??;
+
+        match query_response.kind {
+            QueryResponseKind::CallResult(call_result) => {
+                serde_json::from_slice::<Option<YieldIndex>>(&call_result.result)
+                    .context("failed to deserialize pending llm inference request response")
             }
             _ => {
                 anyhow::bail!("Unexpected result from a view client function call");

@@ -32,6 +32,7 @@ pub enum DBCol {
     SignRequest,
     CKDRequest,
     VerifyForeignTxRequest,
+    LlmInferenceRequest,
     EpochData,
 }
 
@@ -43,17 +44,19 @@ impl DBCol {
             DBCol::SignRequest => "sign_request",
             DBCol::CKDRequest => "ckd_request",
             DBCol::VerifyForeignTxRequest => "verify_foreign_tx_request",
+            DBCol::LlmInferenceRequest => "llm_inference_request",
             DBCol::EpochData => "epoch_id",
         }
     }
 
-    fn all() -> [DBCol; 6] {
+    fn all() -> [DBCol; 7] {
         [
             DBCol::TripleV2,
             DBCol::Presignature,
             DBCol::SignRequest,
             DBCol::CKDRequest,
             DBCol::VerifyForeignTxRequest,
+            DBCol::LlmInferenceRequest,
             DBCol::EpochData,
         ]
     }

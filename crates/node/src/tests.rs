@@ -4,7 +4,8 @@ use elliptic_curve::{Field as _, Group as _};
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_mpc_contract_interface::types::{
     BitcoinExtractor, BitcoinRpcRequest, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES,
-    ForeignChainRpcRequest, ForeignTxPayloadVersion, VerifyForeignTransactionRequestArgs,
+    ForeignChainRpcRequest, ForeignTxPayloadVersion, LlmInferenceRequestArgs,
+    VerifyForeignTransactionRequestArgs,
 };
 use rand::rngs::OsRng;
 use std::collections::BTreeMap;
@@ -18,15 +19,15 @@ use crate::db::SecretDB;
 use crate::indexer::IndexerAPI;
 use crate::indexer::fake::FakeIndexerManager;
 use crate::indexer::handler::{
-    CKDArgs, CKDRequestFromChain, SignArgs, SignatureRequestFromChain,
-    VerifyForeignTxRequestFromChain,
+    CKDArgs, CKDRequestFromChain, LlmInferenceRequestFromChain, SignArgs,
+    SignatureRequestFromChain, VerifyForeignTxRequestFromChain,
 };
 use crate::keyshare::{KeyStorageConfig, Keyshare};
 use crate::migration_service::spawn_recovery_server_and_run_onboarding;
 use crate::p2p::testing::{TestPorts, generate_test_p2p_configs};
 use mpc_node_config::{
-    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, PresignatureConfig,
-    SignatureConfig, SyncMode, TripleConfig,
+    CKDConfig, ConfigFile, ForeignChainsConfig, IndexerConfig, KeygenConfig, LlmConfig,
+    PresignatureConfig, SignatureConfig, SyncMode, TripleConfig,
 };
 
 use crate::primitives::ParticipantId;
@@ -57,6 +58,7 @@ mod basic_cluster;
 mod changing_participant_details;
 mod faulty;
 mod foreign_chain_configuration;
+mod llm_inference;
 mod multidomain;
 mod onboarding;
 mod protocol_yielding;
@@ -228,6 +230,7 @@ impl IntegrationTestSetup {
                 signature: SignatureConfig { timeout_sec: 60 },
                 ckd: CKDConfig { timeout_sec: 60 },
                 foreign_chains: ForeignChainsConfig::default(),
+                llm: LlmConfig::default(),
                 triple: TripleConfig {
                     concurrency: 1,
                     desired_triples_to_buffer: 10,
@@ -545,6 +548,69 @@ pub async fn request_verify_foreign_tx_and_await_response(
             Err(_) => {
                 tracing::info!(
                     "Timed out waiting for verify foreign tx response for user {}",
+                    user
+                );
+                return None;
+            }
+        }
+    }
+}
+
+/// Request an LLM inference from the indexer and wait for the response.
+/// Returns the time taken to receive the response, or None if timed out.
+/// `prompt` distinguishes concurrent requests: responses are matched by
+/// request payload, so callers must not reuse a prompt across requests.
+pub async fn request_llm_inference_and_await_response(
+    indexer: &mut FakeIndexerManager,
+    user: &str,
+    domain: &DomainConfig,
+    prompt: &str,
+    timeout_sec: std::time::Duration,
+) -> Option<std::time::Duration> {
+    assert_matches!(
+        Curve::from(domain.protocol),
+        Curve::Secp256k1,
+        "`request_llm_inference_and_await_response` must be called with a compatible domain",
+    );
+    let request = LlmInferenceRequestFromChain {
+        llm_inference_id: CryptoHash(rand::random()),
+        receipt_id: CryptoHash(rand::random()),
+        request: LlmInferenceRequestArgs {
+            domain_id: domain.id.0.into(),
+            model_id: "test-model".to_string(),
+            prompt: prompt.to_string(),
+            schema: "{}".to_string(),
+        },
+    };
+    tracing::info!(
+        "Sending llm inference request from user {}, request {:?}",
+        user,
+        request.request,
+    );
+    indexer.request_llm_inference(request.clone());
+    let start_time = std::time::Instant::now();
+    loop {
+        match timeout(timeout_sec, indexer.next_response_llm_inference()).await {
+            Ok(llm_inference_response_args) => {
+                if llm_inference_response_args.request.prompt != request.request.prompt {
+                    // This can legitimately happen when multiple nodes submit responses
+                    // for the same llm inference request, mirroring the verify foreign
+                    // tx flow.
+                    tracing::info!(
+                        "Received llm inference response is not for the request we sent (user {})
+                         Expected {:?}, actual {:?}",
+                        user,
+                        request.request,
+                        llm_inference_response_args.request
+                    );
+                    continue;
+                }
+                tracing::info!("Got llm inference response for user {}", user);
+                return Some(start_time.elapsed());
+            }
+            Err(_) => {
+                tracing::info!(
+                    "Timed out waiting for llm inference response for user {}",
                     user
                 );
                 return None;
