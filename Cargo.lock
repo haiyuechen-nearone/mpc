@@ -106,6 +106,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai-wallet-contract"
+version = "3.15.0"
+dependencies = [
+ "k256 0.13.4",
+ "near-account-id",
+ "near-mpc-contract-interface",
+ "near-mpc-signature-verifier",
+ "near-sdk",
+ "rand 0.8.8",
+ "rand_chacha 0.3.1",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "aligned-vec"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

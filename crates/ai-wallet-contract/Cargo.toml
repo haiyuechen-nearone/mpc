@@ -1,0 +1,36 @@
+[package]
+name = "ai-wallet-contract"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+abi = ["near-mpc-contract-interface/abi", "near-account-id/schemars-v0_8"]
+__abi-generate = ["abi", "near-sdk/__abi-generate"]
+
+[dependencies]
+near-sdk = { workspace = true }
+near-mpc-contract-interface = { workspace = true, features = ["near"] }
+near-mpc-signature-verifier = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+schemars = { workspace = true }
+near-account-id = { workspace = true, features = ["schemars-v0_8"] }
+
+[dev-dependencies]
+near-sdk = { workspace = true, features = ["unit-testing"] }
+near-mpc-contract-interface = { workspace = true, features = [
+    "near",
+    "k256",
+] }
+k256 = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+
+[lints]
+workspace = true
