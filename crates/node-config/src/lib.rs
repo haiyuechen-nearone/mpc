@@ -82,7 +82,7 @@ impl Default for LlmConfig {
     fn default() -> LlmConfig {
         LlmConfig {
             url: "http://127.0.0.1:8080/v1".to_string(),
-            model: "Qwen2.5-1.5B-Instruct-4bit".to_string(),
+            model: "mlx-community/Qwen2.5-1.5B-Instruct-4bit".to_string(),
             timeout_sec: 30,
         }
     }

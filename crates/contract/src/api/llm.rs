@@ -180,7 +180,7 @@ mod tests {
     fn transfer_request_args() -> dtos::LlmInferenceRequestArgs {
         dtos::LlmInferenceRequestArgs {
             domain_id: DomainId::default().0.into(),
-            model_id: "Qwen2.5-1.5B-Instruct-4bit".to_string(),
+            model_id: "mlx-community/Qwen2.5-1.5B-Instruct-4bit".to_string(),
             prompt: "send 1 NEAR to alice.near".to_string(),
             schema: r#"{"action":"transfer|swap|deposit"}"#.to_string(),
         }
