@@ -27,6 +27,10 @@ indexer:
   finality: optimistic
 ckd:
   timeout_sec: 60
+llm:
+  url: http://127.0.0.1:8080/v1
+  model: mlx-community/Qwen2.5-1.5B-Instruct-4bit
+  timeout_sec: 30
 cores: 4
 foreign_chains:
   bitcoin:
