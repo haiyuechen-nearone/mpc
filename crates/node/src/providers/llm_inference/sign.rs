@@ -69,7 +69,18 @@ impl LlmInferenceCore<'_> {
         &self,
         request: &NodeLlmRequest,
     ) -> anyhow::Result<LlmInferenceOutcome> {
+        tracing::info!(
+            target: "mpc",
+            request_id = ?request.id,
+            "llm inference leader: querying the LLM endpoint"
+        );
         let output = self.run_inference(&request.request).await?;
+        tracing::info!(
+            target: "mpc",
+            request_id = ?request.id,
+            output = %output,
+            "llm inference leader: model output validated against the schema"
+        );
         let payload = self.build_payload(&request.request, output);
 
         // Build and validate the request before the presignature is popped, so invalid
@@ -116,7 +127,18 @@ impl LlmInferenceCore<'_> {
         request: &NodeLlmRequest,
         presignature_id: UniqueId,
     ) -> anyhow::Result<()> {
+        tracing::info!(
+            target: "mpc",
+            request_id = ?request.id,
+            "llm inference follower: querying the LLM endpoint"
+        );
         let output = self.run_inference(&request.request).await?;
+        tracing::info!(
+            target: "mpc",
+            request_id = ?request.id,
+            output = %output,
+            "llm inference follower: model output validated against the schema"
+        );
         let payload = self.build_payload(&request.request, output);
         let sign_request = build_signature_request(request, &payload)?;
 
