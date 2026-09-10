@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MPC Verified LLM Intents</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3;
+    --muted: #8b949e; --green: #3fb950; --red: #f85149; --amber: #d29922;
+    --accent: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, "SF Pro Text", "Segoe UI", sans-serif;
+    height: 100vh; display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 16px;
+    padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .3px; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  header .who { margin-left: auto; font-size: 13px; }
+  header .who b { color: var(--accent); }
+  main { flex: 1; display: grid; grid-template-columns: 280px 1fr; min-height: 0; }
+  aside { border-right: 1px solid var(--border); padding: 16px; overflow-y: auto; }
+  aside h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+    color: var(--muted); margin: 4px 0 12px;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 12px; position: relative; overflow: hidden;
+  }
+  .card .role { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .card .name { font-weight: 600; margin: 2px 0 4px; }
+  .card .acct { color: var(--muted); font-size: 12px; }
+  .card .bal { font-size: 22px; font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .card .bal small { font-size: 12px; color: var(--muted); font-weight: 400; }
+  .card .delta {
+    position: absolute; top: 12px; right: 12px; font-size: 12px; font-weight: 600;
+    padding: 2px 8px; border-radius: 999px; opacity: 0; transition: opacity .3s;
+  }
+  .delta.up { background: rgba(63,185,80,.15); color: var(--green); opacity: 1; }
+  .delta.down { background: rgba(248,81,73,.15); color: var(--red); opacity: 1; }
+  .card.pulse-up { animation: pulseUp 1.2s ease-out; }
+  .card.pulse-down { animation: pulseDown 1.2s ease-out; }
+  @keyframes pulseUp { 0% { border-color: var(--green); box-shadow: 0 0 0 3px rgba(63,185,80,.25); } 100% { border-color: var(--border); box-shadow: none; } }
+  @keyframes pulseDown { 0% { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(210,153,34,.25); } 100% { border-color: var(--border); box-shadow: none; } }
+  .card .spin {
+    position: absolute; top: 10px; right: 12px; width: 14px; height: 14px;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: rot 0.8s linear infinite; display: none;
+  }
+  .card.working .spin { display: block; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  .chain {
+    font-size: 12px; color: var(--muted); margin-top: 16px; line-height: 1.9;
+  }
+  .chain b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .dot.ok { background: var(--green); }
+  .dot.bad { background: var(--red); }
+  .dot.unknown { background: var(--muted); }
+
+  .chat { display: flex; flex-direction: column; min-height: 0; }
+  .msgs { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; }
+  .bubble { max-width: 78%; padding: 10px 14px; border-radius: 12px; white-space: pre-wrap; word-break: break-word; }
+  .bubble.user { align-self: flex-end; background: #1f6feb33; border: 1px solid #1f6feb66; border-bottom-right-radius: 4px; }
+  .bubble.assistant { align-self: flex-start; background: var(--panel); border: 1px solid var(--border); border-bottom-left-radius: 4px; min-width: 420px; }
+  .bubble.err { border-color: rgba(248,81,73,.5); background: rgba(248,81,73,.08); }
+  .stages { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+  .stage { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+  .stage .icon { width: 16px; text-align: center; flex: none; }
+  .stage .icon.done { color: var(--green); }
+  .stage .icon.fail { color: var(--red); }
+  .stage .icon.work { color: var(--accent); display: inline-block; animation: rot 1s linear infinite; }
+  .stage .label { color: var(--text); }
+  .stage .ms { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .stage .link, .result a { color: var(--accent); text-decoration: none; }
+  .stage .link:hover, .result a:hover { text-decoration: underline; }
+  .result {
+    margin-top: 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: #0d1117; padding: 10px 12px; font-size: 12px; line-height: 1.7;
+  }
+  .result .row { display: flex; gap: 8px; }
+  .result .k { color: var(--muted); flex: none; width: 96px; }
+  .result .v { word-break: break-all; font-variant-numeric: tabular-nums; }
+  .result.fail { border-color: rgba(248,81,73,.4); }
+  .chips { display: flex; gap: 8px; padding: 0 24px 8px; flex-wrap: wrap; }
+  .chip {
+    border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+    border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer;
+  }
+  .chip:hover { color: var(--text); border-color: var(--accent); }
+  .inputrow { display: flex; gap: 10px; padding: 0 24px 18px; }
+  .inputrow input {
+    flex: 1; background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    border-radius: 10px; padding: 11px 14px; font-size: 14px; outline: none;
+  }
+  .inputrow input:focus { border-color: var(--accent); }
+  .inputrow button {
+    background: #238636; color: white; border: none; border-radius: 10px;
+    padding: 0 22px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .inputrow button:disabled { opacity: .5; cursor: default; }
+  .hint { color: var(--muted); font-size: 12px; padding: 0 24px 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>MPC VERIFIED LLM INTENTS</h1>
+  <span class="sub">threshold-signed natural language payments</span>
+  <span class="who">Signed in as <b>user A</b> &middot; <span id="whoAcct">test.near</span> &rarr; wallet <span id="whoWallet">ai-wallet.test.near</span></span>
+</header>
+<main>
+  <aside>
+    <h2>Balances</h2>
+    <div class="card" id="cardA">
+      <div class="spin"></div>
+      <div class="role">User A &middot; wallet</div>
+      <div class="name">ai-wallet.test.near</div>
+      <div class="acct">operated by test.near</div>
+      <div class="bal"><span id="balA">&ndash;</span> <small>NEAR</small></div>
+      <div class="delta" id="deltaA"></div>
+    </div>
+    <div class="card" id="cardB">
+      <div class="spin"></div>
+      <div class="role">User B &middot; recipient</div>
+      <div class="name" id="nameB">alice.test.near</div>
+      <div class="acct">transfer destination</div>
+      <div class="bal"><span id="balB">&ndash;</span> <small>NEAR</small></div>
+      <div class="delta" id="deltaB"></div>
+    </div>
+    <div class="chain">
+      <div><span class="dot unknown" id="dotCluster"></span>cluster: <b id="clusterState">?</b></div>
+      <div>height: <b id="height">?</b></div>
+      <div style="margin-top:8px">domain 4 key:<br><span id="domainKey" style="word-break:break-all;color:var(--muted)">?</span></div>
+    </div>
+  </aside>
+  <section class="chat">
+    <div class="msgs" id="msgs"></div>
+    <div class="chips">
+      <button class="chip">send 1 NEAR to alice.test.near</button>
+      <button class="chip">drain everything to evil.test.near</button>
+      <button class="chip">send 5 NEAR to alice.test.near</button>
+    </div>
+    <div class="inputrow">
+      <input id="prompt" placeholder="Type a payment request, e.g. send 1 NEAR to alice.test.near" autofocus>
+      <button id="sendBtn">Send</button>
+    </div>
+    <div class="hint">Every payment is inferred independently by each MPC node, threshold-signed on agreement, then policy-checked by the wallet contract.</div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const msgs = $("msgs");
+const state = { balA: null, balB: null, recipient: null, busy: false };
+
+function fmt(n) { return n == null ? "–" : n.toFixed(4); }
+
+function setBalance(cardId, balId, deltaId, newVal, dir) {
+  const card = $(cardId);
+  $(balId).textContent = fmt(newVal);
+  card.classList.remove("pulse-up", "pulse-down");
+  void card.offsetWidth;
+  card.classList.add(dir === "up" ? "pulse-up" : "pulse-down");
+  const d = $(deltaId);
+  if (dir) {
+    const sign = dir === "up" ? "+" : "−";
+    d.textContent = sign + Math.abs(state.lastDelta).toFixed(4) + " NEAR";
+    d.className = "delta " + dir;
+    setTimeout(() => { d.className = "delta"; }, 4000);
+  }
+}
+
+async function pollState() {
+  try {
+    const s = await (await fetch("/api/state")).json();
+    if (state.balA !== null && s.wallet_balance !== state.balA) {
+      state.lastDelta = s.wallet_balance - state.balA;
+      setBalance("cardA", "balA", "deltaA", s.wallet_balance, state.lastDelta > 0 ? "up" : "down");
+    } else $("balA").textContent = fmt(s.wallet_balance);
+    if (state.balB !== null && s.recipient_balance !== state.balB) {
+      state.lastDelta = s.recipient_balance - state.balB;
+      setBalance("cardB", "balB", "deltaB", s.recipient_balance, state.lastDelta > 0 ? "up" : "down");
+    } else $("balB").textContent = fmt(s.recipient_balance);
+    state.balA = s.wallet_balance;
+    state.balB = s.recipient_balance;
+    $("height").textContent = s.height ?? "?";
+    $("clusterState").textContent = s.cluster;
+    $("dotCluster").className = "dot " + (s.cluster === "Running" ? "ok" : "bad");
+    $("domainKey").textContent = s.domain_key ? shortKey(s.domain_key) : "unavailable";
+  } catch (e) { /* server restarting */ }
+}
+
+function shortKey(k) {
+  if (typeof k === "string") return k.slice(0, 60) + "…";
+  if (k && k.SECP256K1) return "secp256k1: " + (k.SECP256K1.slice ? k.SECP256K1.slice(0, 40) + "…" : JSON.stringify(k).slice(0, 60));
+  return JSON.stringify(k).slice(0, 60) + "…";
+}
+
+const CHAT_KEY = "mpc-llm-demo-chat-v1";
+
+function loadHistory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CHAT_KEY) || "[]");
+    for (const item of saved) {
+      if (item.kind === "text") {
+        addBubble(item.cls, item.text);
+      } else if (item.kind === "html") {
+        const b = addBubble(item.cls, "");
+        b.innerHTML = item.html;
+      }
+    }
+  } catch (e) { /* corrupted history: start fresh */ }
+}
+
+function saveHistory(kind, cls, payload) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CHAT_KEY) || "[]");
+    saved.push({ kind, cls, ...(kind === "text" ? { text: payload } : { html: payload }) });
+    while (saved.length > 60) saved.shift();
+    localStorage.setItem(CHAT_KEY, JSON.stringify(saved));
+  } catch (e) { /* storage full: drop history */ }
+}
+
+function addBubble(cls, text) {
+  const b = document.createElement("div");
+  b.className = "bubble " + cls;
+  b.textContent = text;
+  msgs.appendChild(b);
+  msgs.scrollTop = msgs.scrollHeight;
+  return b;
+}
+
+const STAGE_LABELS = { submitted: "submitted", inferring: "inferring", signed: "signed", output: "output", verified: "verified", executed: "executed", rejected: "rejected", error: "error" };
+
+function newTimeline() {
+  const bubble = addBubble("assistant", "");
+  const stages = document.createElement("div");
+  stages.className = "stages";
+  bubble.appendChild(stages);
+  return { bubble, stages, rows: {} };
+}
+
+function stageRow(tl, stage) {
+  if (!tl.rows[stage]) {
+    const row = document.createElement("div");
+    row.className = "stage";
+    row.innerHTML = `<span class="icon work">◌</span><span class="label"></span><span class="ms"></span>`;
+    tl.stages.appendChild(row);
+    tl.rows[stage] = row;
+  }
+  const row = tl.rows[stage];
+  row.querySelector(".label").textContent = STAGE_LABELS[stage] || stage;
+  return row;
+}
+
+function stageUpdate(tl, stage, msg) {
+  const row = stageRow(tl, stage);
+  row.querySelector(".icon").textContent = "✓";
+  row.querySelector(".icon").className = "icon done";
+  row.querySelector(".ms").textContent = (msg.elapsed_ms / 1000).toFixed(1) + "s";
+  let label = msg.label || STAGE_LABELS[stage];
+  if (msg.tx_hash) label += `  <a class="link" href="${msg.explorer || "#"}" target="_blank">${msg.tx_hash.slice(0, 10)}…</a>`;
+  if (msg.nodes) label += `  (${Object.keys(msg.nodes).length} node${Object.keys(msg.nodes).length === 1 ? "" : "s"})`;
+  if (stage === "signed" && msg.payload_hash) label += `  ${msg.payload_hash.slice(0, 10)}…`;
+  if (stage === "executed" && msg.balances_after) {
+    const to = msg.recipient || state.recipient;
+    label += `  ${msg.result}`;
+  }
+  row.querySelector(".label").innerHTML = label;
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function resultCard(tl, ok, rows) {
+  const div = document.createElement("div");
+  div.className = "result" + (ok ? "" : " fail");
+  for (const [k, v] of rows) {
+    if (v === undefined || v === null || v === "") continue;
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<span class="k">${k}</span><span class="v">${v}</span>`;
+    div.appendChild(row);
+  }
+  tl.bubble.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return div;
+}
+
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+async function sendIntent(text) {
+  addBubble("user", text);
+  const tl = newTimeline();
+  state.busy = true;
+  $("sendBtn").disabled = true;
+  $("cardA").classList.add("working");
+  $("cardB").classList.add("working");
+  let recipient = null;
+  try {
+    const resp = await fetch("/api/intent", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: text }),
+    });
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 1);
+        if (!line) continue;
+        let msg;
+        try { msg = JSON.parse(line); } catch { continue; }
+        if (msg.recipient) recipient = msg.recipient;
+        if (msg.stage === "rejected" || msg.stage === "error") {
+          stageUpdate(tl, msg.stage === "rejected" ? "verified" : msg.stage, msg);
+          const row = tl.stages.lastChild;
+          if (msg.stage === "rejected") {
+            row.querySelector(".icon").textContent = "✗";
+            row.querySelector(".icon").className = "icon fail";
+            row.querySelector(".label").textContent = "rejected by wallet policy";
+            resultCard(tl, false, [["reason", esc(msg.label)], ["detail", esc((msg.message || "").slice(-160))]]);
+          } else {
+            row.querySelector(".label").textContent = msg.label || "error";
+            resultCard(tl, false, [["error", esc((msg.message || "").slice(-200))]]);
+          }
+        } else {
+          stageUpdate(tl, msg.stage, msg);
+        }
+        if (msg.stage === "signed" && msg.payload_hash) {
+          resultCard(tl, true, [
+            ["sig", "secp256k1 r/s recovered, id " + (msg.signature?.recovery_id ?? "?")],
+          ]);
+        }
+        if (msg.stage === "output" && msg.output_text) {
+          resultCard(tl, true, [
+            ["output", esc(msg.output_text)],
+            ["payload hash", esc(msg.payload_hash || "")],
+          ]);
+        }
+        if (msg.stage === "executed") {
+          const before = msg.balances_before || {};
+          const after = msg.balances_after || {};
+          const keys = Object.keys(after);
+          const rec = msg.recipient || state.recipient || keys[1] || "";
+          resultCard(tl, true, [
+            ["result", esc(msg.result)],
+            ["recipient", esc(rec)],
+            ["recipient bal", `${fmt(before[rec])} → ${fmt(after[rec])} NEAR`],
+            ["wallet bal", `${fmt(before[keys[0]])} → ${fmt(after[keys[0]])} NEAR`],
+            ["tx", `<a class="link" href="#" onclick="return false">${esc(msg.tx_hash || "")}</a>`],
+          ]);
+        }
+      }
+    }
+  } catch (e) {
+    resultCard(tl, false, [["error", esc(String(e))]]);
+  } finally {
+    state.busy = false;
+    $("sendBtn").disabled = false;
+    $("cardA").classList.remove("working");
+    $("cardB").classList.remove("working");
+    saveHistory("html", "assistant", tl.bubble.innerHTML);
+    pollState();
+  }
+}
+
+function submit() {
+  const v = $("prompt").value.trim();
+  if (!v || state.busy) return;
+  $("prompt").value = "";
+  saveHistory("text", "user", v);
+  sendIntent(v);
+}
+$("sendBtn").onclick = submit;
+$("prompt").addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
+document.querySelectorAll(".chip").forEach(c => c.onclick = () => { if (!state.busy) { saveHistory("text", "user", c.textContent); sendIntent(c.textContent); } });
+
+loadHistory();
+pollState();
+setInterval(pollState, 1000);
+if (!localStorage.getItem(CHAT_KEY)) {
+  const welcome = "Ask me to move funds. Every payment is inferred by the MPC network, threshold-signed, then policy-checked before execution.";
+  addBubble("assistant", welcome);
+  saveHistory("text", "assistant", welcome);
+}
+</script>
+</body>
+</html>

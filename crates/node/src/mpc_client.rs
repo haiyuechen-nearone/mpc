@@ -363,6 +363,14 @@ impl MpcClient {
                         );
 
                     for request in &llm_inference_requests.requests {
+                        tracing::info!(
+                            target: "mpc",
+                            request_id = ?request.id,
+                            domain = ?request.request.domain_id,
+                            model_id = %request.request.model_id,
+                            prompt = %request.request.prompt,
+                            "llm inference request queued, waiting to become leader"
+                        );
                         self.llm_inference_request_store.add(request);
                     }
                     pending_llm_inferences.notify_new_block(llm_inference_requests);
@@ -574,6 +582,11 @@ impl MpcClient {
                             .clone();
                         let response = match existing_response {
                             None => {
+                                tracing::info!(
+                                    target: "mpc",
+                                    request_id = ?llm_inference_attempt.request.id,
+                                    "llm inference: leading computation, running prompt through the model"
+                                );
                                 let response = run_led_computation(
                                     &metrics::MPC_NUM_LLM_INFERENCE_COMPUTATIONS_LED,
                                     Duration::from_secs(this.config.signature.timeout_sec),
@@ -592,6 +605,11 @@ impl MpcClient {
                             }
                             Some(response) => response,
                         };
+                        tracing::info!(
+                            target: "mpc",
+                            request_id = ?llm_inference_attempt.request.id,
+                            "llm inference: submitting signed response to the contract"
+                        );
                         let _ = chain_txn_sender_llm_inference
                             .send(ChainSendTransactionRequest::LlmInferenceRespond(response))
                             .await;
@@ -735,6 +753,13 @@ impl MpcClient {
                     .llm_inference_provider
                     .make_llm_inference_leader(request.id)
                     .await?;
+
+                tracing::info!(
+                    target: "mpc",
+                    request_id = ?request.id,
+                    output = %payload.output,
+                    "llm inference: model output agreed upon by the network, signature computed"
+                );
 
                 let response = contract_args::LlmInferenceRespondArgs::from_signature(
                     request.clone(),

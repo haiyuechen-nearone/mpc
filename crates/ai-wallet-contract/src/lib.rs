@@ -21,9 +21,13 @@ const MPC_CONTRACT_ID: &str = "mpc-contract.test.near";
 /// Domain id of the Llm purpose domain in the localnet domain registry.
 const LLM_DOMAIN_ID: DomainId = DomainId(4);
 
-/// Upper bound for any transfer this wallet executes. The intent schema
-/// cannot express this, so it is policed here.
-const MAX_TRANSFER_AMOUNT_YOCTONEAR: u128 = 1_000_000_000_000_000_000_000_000; // 1 NEAR
+/// Upper bound for any transfer this wallet executes, in whole NEAR. The
+/// intent schema cannot express this, so it is policed here.
+const MAX_TRANSFER_AMOUNT_NEAR: u128 = 10;
+
+/// The signed intent carries whole NEAR: small models cannot reliably do
+/// 24 digit arithmetic, so the contract owns the yoctoNEAR conversion.
+const YOCTONEAR_PER_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 
 /// The wallet has no state; the MPC contract id and domain id are compile
 /// time constants for the demo localnet.
@@ -126,13 +130,11 @@ impl AiWalletContract {
                 env::panic_str(&format!("signature verification failed: {err:?}"))
             });
 
-        log!(
-            "intent verified: {} {} yoctoNEAR",
-            intent.action,
-            intent.amount
-        );
+        log!("intent verified: {} {} NEAR", intent.action, intent.amount);
         Promise::new(intent.to)
-            .transfer(NearToken::from_yoctonear(intent.amount))
+            .transfer(NearToken::from_yoctonear(
+                intent.amount * YOCTONEAR_PER_NEAR,
+            ))
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(Gas::from_tgas(10))
@@ -159,9 +161,9 @@ impl AiWalletContract {
                 intent.action
             ));
         }
-        if intent.amount > MAX_TRANSFER_AMOUNT_YOCTONEAR {
+        if intent.amount > MAX_TRANSFER_AMOUNT_NEAR {
             env::panic_str(&format!(
-                "amount {} exceeds the per transfer cap of {MAX_TRANSFER_AMOUNT_YOCTONEAR}",
+                "amount {} NEAR exceeds the per transfer cap of {MAX_TRANSFER_AMOUNT_NEAR} NEAR",
                 intent.amount
             ));
         }
@@ -210,7 +212,7 @@ mod tests {
         let intent = Intent {
             action: "transfer".to_string(),
             to: "bob.near".parse().unwrap(),
-            amount: MAX_TRANSFER_AMOUNT_YOCTONEAR,
+            amount: MAX_TRANSFER_AMOUNT_NEAR,
         };
 
         // When
